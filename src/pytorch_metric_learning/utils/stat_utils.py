@@ -16,7 +16,7 @@ from . import common_functions as c_f
 
 # modified from https://github.com/facebookresearch/deepcluster
 def get_knn(
-    reference_embeddings, test_embeddings, k, embeddings_come_from_same_source=False
+    reference_embeddings, test_embeddings, k, embeddings_come_from_same_source=False, use_all_gpus=True
 ):
     device = reference_embeddings.device
     reference_embeddings = c_f.to_numpy(reference_embeddings).astype(np.float32)
@@ -27,7 +27,11 @@ def get_knn(
     logging.info("embedding dimensionality is %d" % d)
     index = faiss.IndexFlatL2(d)
     if faiss.get_num_gpus() > 0:
-        index = faiss.index_cpu_to_all_gpus(index)
+        if use_all_gpus:
+            index = faiss.index_cpu_to_all_gpus(index)
+        else:
+            res = faiss.StandardGpuResources()
+            index = faiss.index_cpu_to_gpu(res, device.index, index)
     index.add(reference_embeddings)
     distances, indices = index.search(test_embeddings, k + 1)
     distances = c_f.to_device(torch.from_numpy(distances), device=device)
@@ -38,7 +42,7 @@ def get_knn(
 
 
 # modified from https://raw.githubusercontent.com/facebookresearch/deepcluster/
-def run_kmeans(x, nmb_clusters):
+def run_kmeans(x, nmb_clusters, use_all_gpus=True):
     device = x.device
     x = c_f.to_numpy(x).astype(np.float32)
     n_data, d = x.shape
@@ -51,7 +55,11 @@ def run_kmeans(x, nmb_clusters):
     clus.max_points_per_centroid = 10000000
     index = faiss.IndexFlatL2(d)
     if faiss.get_num_gpus() > 0:
-        index = faiss.index_cpu_to_all_gpus(index)
+        if use_all_gpus:
+            index = faiss.index_cpu_to_all_gpus(index)
+        else:
+            res = faiss.StandardGpuResources()
+            index = faiss.index_cpu_to_gpu(res, device.index, index)
     # perform the training
     clus.train(x, index)
     _, idxs = index.search(x, 1)
